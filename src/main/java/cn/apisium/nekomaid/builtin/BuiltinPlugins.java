@@ -6,11 +6,14 @@ import org.bukkit.plugin.PluginManager;
 public final class BuiltinPlugins {
     private final Terminal terminal;
     private final FilesManager files;
+    private final LocalWebFrontend localWebFrontend;
     private Scheduler scheduler;
     private Profiler profiler;
     public BuiltinPlugins(NekoMaid main) {
         new Dashboard(main);
         terminal = new Terminal(main);
+        AiAssistant ai = new AiAssistant(main, terminal);
+        localWebFrontend = new LocalWebFrontend(main, ai);
         PlayerList.init(main);
         ServerConfig.init(main);
         files = new FilesManager(main);
@@ -26,6 +29,7 @@ public final class BuiltinPlugins {
         });
     }
     public void disable() {
+        localWebFrontend.disable();
         terminal.stop();
         files.disable();
         if (scheduler != null) scheduler.stop();

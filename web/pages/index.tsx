@@ -19,6 +19,7 @@ import Public from '@mui/icons-material/Public'
 import Widgets from '@mui/icons-material/Widgets'
 import Pets from '@mui/icons-material/Pets'
 import Equalizer from '@mui/icons-material/Equalizer'
+import SmartToy from '@mui/icons-material/SmartToy'
 
 import Dashboard from './Dashboard'
 import Terminal from './Terminal'
@@ -29,6 +30,7 @@ import BlockEditor from './BlockEditor'
 import EntityEditor from './EntityEditor'
 import Config from './Config'
 import Inventory, { playerAction } from './Inventory'
+import AiAssistant from './AiAssistant'
 
 export const ProfilerIcon: React.FC = () => {
   const plugin = usePlugin()
@@ -53,6 +55,7 @@ export default (p: Plugin) => p.addPages(
   { component: BlockEditor, path: 'block', icon: <Widgets />, title: lang.blockEditor.title },
   { component: EntityEditor, path: ['entity', 'entity/:id'], icon: <Pets />, title: lang.entityEditor.title },
   { component: loadable(() => import('./Profiler')), path: 'profiler', icon: ProfilerIcon, title: lang.profiler.title },
+  { component: AiAssistant, path: 'ai', icon: <SmartToy />, title: lang.ai.title },
   { component: loadable(() => import('./Scheduler')), path: 'scheduler', icon: <Schedule />, title: lang.scheduler.title },
   { component: Inventory, path: ['inventory', 'inventory/:name'], icon: <Backpack />, title: lang.inventory.title },
   { component: Config, path: 'config', icon: <Settings />, title: lang.config.title }

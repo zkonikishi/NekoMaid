@@ -249,6 +249,18 @@ export default {
     title: '方块',
     container: '容器'
   },
+  ai: {
+    title: 'AI 助手',
+    subtitle: '使用 OpenAI 兼容模型分析近期日志和服务器上下文。',
+    enabled: '已启用',
+    disabled: '已禁用',
+    configured: '已配置',
+    notConfigured: '未配置',
+    question: '问题',
+    ask: '分析',
+    analyzing: '分析中...',
+    setupHint: '请在 config.yml 中启用 ai.enabled，并配置 ai.base-url、ai.api-key 和 ai.model。'
+  },
   codeMirrorPhrases: {
     Yes: minecraft['gui.yes'],
     No: minecraft['gui.no'],

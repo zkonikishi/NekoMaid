@@ -2,10 +2,6 @@ package cn.apisium.nekomaid.builtin;
 
 import cn.apisium.nekomaid.NekoMaid;
 import cn.apisium.nekomaid.utils.Utils;
-import cn.apisium.uniporter.Constants;
-import cn.apisium.uniporter.Uniporter;
-import cn.apisium.uniporter.router.api.Route;
-import cn.apisium.uniporter.router.api.UniporterHttpHandler;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import io.netty.channel.*;
@@ -28,7 +24,6 @@ import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.io.IOUtils;
 
 import java.io.*;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -45,11 +40,12 @@ final class FilesManager {
     private final NekoMaid main;
     private final Cache<String, Path> uploadMap = createCache();
     private final Cache<String, Path> downloadMap = createCache();
+    private final NekoMaid.HttpRouteHandler uploadHandler = new UploadHandler();
+    private final NekoMaid.HttpRouteHandler downloadHandler = new DownloadHandler();
 
     public FilesManager(NekoMaid main) {
         this.main = main;
-        Uniporter.registerHandler("NekoMaidUpload", new UploadHandler(), true);
-        Uniporter.registerHandler("NekoMaidDownload", new DownloadHandler(), true);
+        main.addHttpRouteHandler(uploadHandler).addHttpRouteHandler(downloadHandler);
         main.onConnected(main, client -> client.onWithAck("files:fetch", args -> {
             try {
                 Path p = Paths.get(".", (String) args[0]);
@@ -177,80 +173,59 @@ final class FilesManager {
     }
 
     public void disable() {
-        Uniporter.removeHandler("NekoMaidUpload");
-        Uniporter.removeHandler("NekoMaidDownload");
+        main.removeHttpRouteHandler(uploadHandler).removeHttpRouteHandler(downloadHandler);
     }
 
-    private final class UploadDataHandler extends SimpleChannelInboundHandler<HttpContent> {
-        private final HttpRequest request;
-        private final HttpPostRequestDecoder httpDecoder;
-        private final File file;
-
-        public UploadDataHandler(HttpRequest request, File file) {
-            this.request = request;
-            httpDecoder = new HttpPostRequestDecoder(factory, request);
-            httpDecoder.setDiscardThreshold(0);
-            this.file = file;
-        }
-
+    private final class UploadHandler implements NekoMaid.HttpRouteHandler {
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, HttpContent msg) throws Exception {
-            httpDecoder.offer(msg);
-            if (httpDecoder.hasNext()) {
-                InterfaceHttpData data = httpDecoder.next();
-                if (data != null) {
-                    try {
-                        if (data.getHttpDataType() == InterfaceHttpData.HttpDataType.FileUpload) {
-                            final FileUpload fileUpload = (FileUpload) data;
-                            try (FileInputStream fis = new FileInputStream(fileUpload.getFile());
-                                 FileOutputStream fos = new FileOutputStream(file)) {
-                                FileChannel inputChannel = fis.getChannel(),
-                                        outputChannel = fos.getChannel();
-                                outputChannel.transferFrom(inputChannel, 0, inputChannel.size());
-                                HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-                                addHeaders(request, response);
-                                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-                            }
-                        }
-                    } finally {
-                        data.release();
-                    }
-                }
-            }
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            if (main.isDebug()) cause.printStackTrace();
-        }
-    }
-
-    private final class UploadHandler implements UniporterHttpHandler {
-        @Override
-        public void hijack(ChannelHandlerContext context, HttpRequest request) {
-            if (HttpMethod.PUT != request.method()) return;
+        public boolean handle(ChannelHandlerContext context, FullHttpRequest request) throws IOException {
+            if (!request.uri().startsWith("/Upload/")) return false;
             String[] arr = request.uri().split("/");
-            if (arr.length == 0) return;
+            if (arr.length == 0) return true;
             Path p = uploadMap.getIfPresent(arr[arr.length - 1]);
-            if (p != null) context.pipeline().replace(Constants.AGGREGATOR_HANDLER_ID, "UploadDataHandler",
-                    new UploadDataHandler(request, p.toFile()));
-        }
-
-        @Override
-        public void handle(String path, Route route, ChannelHandlerContext context, FullHttpRequest request) {
-            HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1,
-                    request.method() == HttpMethod.OPTIONS ? HttpResponseStatus.OK : HttpResponseStatus.METHOD_NOT_ALLOWED);
+            HttpResponseStatus status = HttpResponseStatus.METHOD_NOT_ALLOWED;
+            if (request.method() == HttpMethod.OPTIONS) {
+                status = HttpResponseStatus.OK;
+            } else if (request.method() == HttpMethod.PUT && p != null) {
+                writeUpload(request, p.toFile());
+                status = HttpResponseStatus.OK;
+            }
+            HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
             addHeaders(request, response);
             context.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            return true;
         }
-
-        @Override
-        public boolean hijackAggregator() { return true; }
     }
 
-    private final class DownloadHandler implements UniporterHttpHandler {
+    private void writeUpload(FullHttpRequest request, File file) throws IOException {
+        HttpPostRequestDecoder decoder = new HttpPostRequestDecoder(factory, request);
+        try {
+            decoder.setDiscardThreshold(0);
+            while (decoder.hasNext()) {
+                InterfaceHttpData data = decoder.next();
+                if (data == null) continue;
+                try {
+                    if (data.getHttpDataType() == InterfaceHttpData.HttpDataType.FileUpload) {
+                        FileUpload upload = (FileUpload) data;
+                        try (InputStream in = new FileInputStream(upload.getFile());
+                             OutputStream out = new FileOutputStream(file)) {
+                            IOUtils.copy(in, out);
+                        }
+                        return;
+                    }
+                } finally {
+                    data.release();
+                }
+            }
+        } finally {
+            decoder.destroy();
+        }
+    }
+
+    private final class DownloadHandler implements NekoMaid.HttpRouteHandler {
         @Override
-        public void handle(String path, Route route, ChannelHandlerContext context, FullHttpRequest request) {
+        public boolean handle(ChannelHandlerContext context, FullHttpRequest request) {
+            if (!request.uri().startsWith("/Download/")) return false;
             if (request.method() == HttpMethod.GET) {
                 String[] arr = request.uri().split("/");
                 if (arr.length != 0) {
@@ -270,7 +245,7 @@ final class FilesManager {
                                     ? new DefaultFileRegion(raf.getChannel(), 0, length)
                                     : new ChunkedFile(raf), context.newProgressivePromise());
                             context.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(ChannelFutureListener.CLOSE);
-                            return;
+                            return true;
                         } catch (Throwable e) {
                             e.printStackTrace();
                         }
@@ -279,6 +254,7 @@ final class FilesManager {
             }
             context.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN))
                     .addListener(ChannelFutureListener.CLOSE);
+            return true;
         }
     }
 

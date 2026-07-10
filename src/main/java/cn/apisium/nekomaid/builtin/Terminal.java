@@ -3,6 +3,7 @@ package cn.apisium.nekomaid.builtin;
 import cn.apisium.nekomaid.NekoMaid;
 import cn.apisium.nekomaid.utils.Utils;
 import com.google.common.collect.EvictingQueue;
+import net.kyori.adventure.text.Component;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.apache.logging.log4j.Level;
@@ -124,6 +125,23 @@ final class Terminal implements Appender {
         ((Logger) LogManager.getRootLogger()).removeAppender(this);
     }
 
+    public String getRecentLogText(int maxLines) {
+        StringBuilder sb = new StringBuilder();
+        int skip = Math.max(0, queue.size() - maxLines);
+        int index = 0;
+        for (Log log : queue) {
+            if (index++ < skip) continue;
+            if (log.components != null) sb.append(TextComponent.toLegacyText(log.components));
+            else {
+                sb.append('[').append(log.level).append("] ");
+                if (log.logger != null && !log.logger.isEmpty()) sb.append('[').append(log.logger).append("] ");
+                sb.append(log.msg);
+            }
+            if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') sb.append('\n');
+        }
+        return sb.toString();
+    }
+
     @Override
     public boolean isStarted() {
         return true;
@@ -183,6 +201,11 @@ final class Terminal implements Appender {
         @Override
         public @NotNull String getName() {
             return o.getName();
+        }
+
+        @Override
+        public @NotNull Component name() {
+            return o.name();
         }
 
         @Override
