@@ -59,7 +59,7 @@ import java.util.function.*;
 import java.util.stream.Collectors;
 
 @SuppressWarnings({"UnusedReturnValue", "unused"})
-@Plugin(name = "NekoMaid", version = "0.0.0")
+@Plugin(name = "NekoMaid", version = "1.0.0")
 @Description("A plugin can use Web to manage your server.")
 @Author("Shirasawa")
 @Website("https://neko-craft.com")

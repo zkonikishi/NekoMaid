@@ -92,7 +92,7 @@ pnpm run build
 .\gradlew.bat build
 ```
 
-构建产物位于 `build/libs/NekoMaid-1.0-SNAPSHOT.jar`。仓库同时保留已构建前端资源，便于 Gradle 直接将管理页面打包进 JAR。
+构建产物位于 `build/libs/NekoMaid-1.0.0.jar`。仓库同时保留已构建前端资源，便于 Gradle 直接将管理页面打包进 JAR。
 
 ## 权限
 
