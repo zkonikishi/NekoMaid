@@ -3,6 +3,23 @@ token: ~
 hostname: 127.0.0.1
 customAddress: ''
 
+web:
+  enabled: true
+  host: 127.0.0.1
+  port: 8088
+  public-url: ''
+  https: false
+  local-frontend: true
+
+ai:
+  enabled: false
+  base-url: 'https://api.openai.com/v1'
+  api-key: ''
+  model: 'gpt-4.1-mini'
+  timeout-seconds: 60
+  max-log-lines: 120
+  system-prompt: 'You are a senior Minecraft Paper server administrator. Analyze logs, identify likely causes, and propose safe repair steps. Do not suggest destructive commands unless they are clearly necessary.'
+
 skin-url: ''
 head-url: ''
 

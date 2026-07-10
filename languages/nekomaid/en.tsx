@@ -1,5 +1,5 @@
 import React from 'react'
-import minecraft from '../minecraft/en_us.json'
+import minecraft from '../minecraft/zh_cn.json'
 import type { Language } from '../index'
 
 const lang: Language = {
@@ -248,6 +248,18 @@ const lang: Language = {
   blockEditor: {
     title: 'Block',
     container: 'Inventory'
+  },
+  ai: {
+    title: 'AI Assistant',
+    subtitle: 'Analyze recent logs and server context with an OpenAI-compatible model.',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    configured: 'Configured',
+    notConfigured: 'Not configured',
+    question: 'Question',
+    ask: 'Analyze',
+    analyzing: 'Analyzing...',
+    setupHint: 'Enable ai.enabled and configure ai.base-url, ai.api-key, and ai.model in config.yml.'
   },
   codeMirrorPhrases: { } as any,
   profiler: {

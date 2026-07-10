@@ -5,16 +5,22 @@ import cn.apisium.nekomaid.utils.GeoIP;
 import cn.apisium.nekomaid.utils.OshiWrapper;
 import cn.apisium.nekomaid.utils.Utils;
 import cn.apisium.netty.engineio.EngineIoHandler;
-import cn.apisium.uniporter.Uniporter;
-import cn.apisium.uniporter.router.api.Route;
-import cn.apisium.uniporter.router.api.UniporterHttpHandler;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ArrayListMultimap;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketServerCompressionHandler;
+import io.netty.util.ReferenceCountUtil;
 import io.socket.engineio.server.EngineIoServer;
 import io.socket.socketio.server.SocketIoAdapter;
 import io.socket.socketio.server.SocketIoNamespace;
@@ -53,24 +59,21 @@ import java.util.function.*;
 import java.util.stream.Collectors;
 
 @SuppressWarnings({"UnusedReturnValue", "unused"})
-@Plugin(name = "NekoMaid", version = "0.0.0")
+@Plugin(name = "NekoMaid", version = "1.0.0")
 @Description("A plugin can use Web to manage your server.")
 @Author("Shirasawa")
 @Website("https://neko-craft.com")
 @ApiVersion(ApiVersion.Target.v1_13)
 @Commands(@Command(name = "nekomaid", permission = "neko.maid.use", desc = "Can use NekoMaid.", aliases = "nm"))
 @Permissions(@Permission(name = "neko.maid.use"))
-@Dependency("Uniporter")
 @SoftDependency("Vault")
 @SoftDependency("NBTAPI")
 @SoftDependency("OpenInv")
 @SoftDependency("InvSeePlusPlus")
 @SoftDependency("PlugMan")
-@SoftDependency("ServerUtils")
 @SoftDependency("PlaceholderAPI")
 @SoftDependency("Multiverse-Core")
 public final class NekoMaid extends JavaPlugin implements Listener {
-    private final static String UNIPORTER_VERSION = "1.3.4-SNAPSHOT";
     private final static String URL_MESSAGE = ChatColor.translateAlternateColorCodes('&',
             "&e[NekoMaid] &fOpen this url to manage your server: &7"),
             SUCCESS = ChatColor.translateAlternateColorCodes('&',
@@ -86,6 +89,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     private final HashMap<String, Map.Entry<org.bukkit.plugin.Plugin, NekoMaidCommand>> pluginCommands = new HashMap<>();
     private final HashMap<String, HashMap<String, AbstractMap.SimpleEntry<Consumer<Client>,
             Consumer<Client>>>> pluginPages = new HashMap<>();
+    private final List<HttpRouteHandler> httpRouteHandlers = new ArrayList<>();
 
     private BuiltinPlugins plugins;
     private EngineIoServer engineIoServer;
@@ -97,6 +101,8 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     private URLClassLoader loader;
     private GeoIP geoIP;
     private boolean debug;
+    private EventLoopGroup webBossGroup, webWorkerGroup;
+    private Channel webChannel;
     public SocketIoNamespace io;
     @SuppressWarnings("ProtectedMemberInFinalClass")
     protected Map<String, Set<SocketIoSocket>> mRoomSockets;
@@ -122,11 +128,6 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         if (getConfig().getString("token", null) == null) {
             getConfig().set("token", UUID.randomUUID().toString());
             saveConfig();
-        }
-
-        String version = getServer().getPluginManager().getPlugin("Uniporter").getDescription().getVersion();
-        if (!UNIPORTER_VERSION.equals(version)) {
-            getLogger().warning("Unsupported Uniporter version: " + version + ", it should be: " + UNIPORTER_VERSION);
         }
 
         engineIoServer = new EngineIoServer();
@@ -189,7 +190,14 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                     .put("spawnRadius", getServer().getSpawnRadius());
             client.send("globalData", GLOBAL_DATA);
         }).on("error", System.out::println);
-        Uniporter.registerHandler("NekoMaid", new MainHandler(), true);
+        try {
+            startStandaloneWebServer();
+        } catch (Throwable e) {
+            getLogger().severe("Failed to start standalone web server: " + e.getMessage());
+            if (debug) e.printStackTrace();
+            setEnabled(false);
+            return;
+        }
 
         geoIP = new GeoIP(this);
         plugins = new BuiltinPlugins(this);
@@ -263,8 +271,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         });
         registerCommand(this, "diagnostic", (sender, command, label, args) -> {
             int port = getConnectPort();
-            String hostname = (Uniporter.isSSLPort(port) ? "https://" : "http://") +
-                    getConnectHostname(port, "EIO=4&transport=polling");
+            String hostname = getWebScheme() + "://" + getConnectHostname(port, "EIO=4&transport=polling");
             sender.sendMessage(DIAGNOSTIC + hostname);
             Utils.diagnosticConnections(hostname, sender);
             return true;
@@ -298,7 +305,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     public String getConnectUrl() { return getConnectUrl(getConfig().getString("token", "")); }
 
     public int getConnectPort() {
-        return Uniporter.findPortsByHandler("NekoMaid").stream().findFirst().orElseGet(getServer()::getPort);
+        return getConfig().getInt("web.port", 8080);
     }
 
     @NotNull
@@ -309,20 +316,26 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     @NotNull
     public String getConnectHostname(int port, @Nullable String token) {
         String url = getConfig().getString("hostname", "");
-        Optional<Route> it = Uniporter.findRoutesByHandler("NekoMaid").stream().findFirst();
-        if (!it.isPresent()) throw new RuntimeException("Handler not registered!");
-        Route route = it.get();
-        return (url.contains(":") ? url : url + ":" + port) + route.getPath() + (token == null ? "" : "?" + token);
+        if (url.isEmpty()) url = getConfig().getString("web.host", "127.0.0.1");
+        return (url.contains(":") ? url : url + ":" + port) + "/" + (token == null ? "" : "?" + token);
     }
 
     @NotNull
     public String getConnectUrl(@NotNull String token) {
         String custom = getConfig().getString("customAddress", "");
+        String publicUrl = getConfig().getString("web.public-url", "");
+        if (publicUrl != null && !publicUrl.isEmpty()) {
+            String separator = publicUrl.contains("?") ? "&" : "?";
+            return publicUrl + separator + "token=" + token;
+        }
         int port = getConnectPort();
+        if (custom.isEmpty() && getConfig().getBoolean("web.local-frontend", true)) {
+            return getWebScheme() + "://" + getConnectHostname(port, "token=" + token);
+        }
         String url = getConnectHostname(port, token);
         try { url = URLEncoder.encode(url, "UTF-8"); } catch (Throwable ignored) { }
         return custom.isEmpty()
-                ? (Uniporter.isSSLPort(port) ? "https" : "http") + "://maid.neko-craft.com/?" + url
+                ? getWebScheme() + "://maid.neko-craft.com/?" + url
                 : custom.replace("{token}", token).replace("{hostname}", url);
     }
 
@@ -350,7 +363,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
-        Uniporter.removeHandler("NekoMaid");
+        stopStandaloneWebServer();
         pages.clear();
         connectListeners.clear();
         pluginCommands.clear();
@@ -456,21 +469,96 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         return this;
     }
 
-    private final class MainHandler implements UniporterHttpHandler {
+    @Contract("_ -> this")
+    @NotNull
+    public NekoMaid addHttpRouteHandler(@NotNull HttpRouteHandler handler) {
+        Objects.requireNonNull(handler);
+        httpRouteHandlers.add(handler);
+        return this;
+    }
+
+    @Contract("_ -> this")
+    @NotNull
+    public NekoMaid removeHttpRouteHandler(@NotNull HttpRouteHandler handler) {
+        Objects.requireNonNull(handler);
+        httpRouteHandlers.remove(handler);
+        return this;
+    }
+
+    private String getWebScheme() {
+        return getConfig().getBoolean("web.https", false) ? "https" : "http";
+    }
+
+    private void startStandaloneWebServer() throws InterruptedException {
+        if (!getConfig().getBoolean("web.enabled", true)) {
+            getLogger().info("Standalone web server is disabled.");
+            return;
+        }
+        String host = getConfig().getString("web.host", "127.0.0.1");
+        int port = getConnectPort();
+        webBossGroup = new NioEventLoopGroup(1);
+        webWorkerGroup = new NioEventLoopGroup();
+        webChannel = new ServerBootstrap()
+                .group(webBossGroup, webWorkerGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel channel) {
+                        channel.pipeline()
+                                .addLast(new HttpServerCodec())
+                                .addLast(new HttpObjectAggregator(1024 * 1024 * 5))
+                                .addLast(new HttpContentCompressor())
+                                .addLast(new WebSocketServerCompressionHandler())
+                                .addLast(new HttpRouteDispatcher())
+                                .addLast(new EngineIoHandler(engineIoServer, null,
+                                        "ws://maid.neko-craft.com", 1024 * 1024 * 5) {
+                            @Override
+                            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+                                if (debug) cause.printStackTrace();
+                                ctx.close();
+                            }
+                        });
+                    }
+                })
+                .bind(host, port)
+                .sync()
+                .channel();
+        getLogger().info("Standalone web server is listening on " + host + ":" + port);
+    }
+
+    private void stopStandaloneWebServer() {
+        if (webChannel != null) {
+            webChannel.close().addListener(ChannelFutureListener.CLOSE);
+            webChannel = null;
+        }
+        if (webBossGroup != null) {
+            webBossGroup.shutdownGracefully();
+            webBossGroup = null;
+        }
+        if (webWorkerGroup != null) {
+            webWorkerGroup.shutdownGracefully();
+            webWorkerGroup = null;
+        }
+    }
+
+    @FunctionalInterface
+    public interface HttpRouteHandler {
+        boolean handle(ChannelHandlerContext context, FullHttpRequest request) throws Exception;
+    }
+
+    private final class HttpRouteDispatcher extends SimpleChannelInboundHandler<FullHttpRequest> {
         @Override
-        public void handle(String path, Route route, ChannelHandlerContext context, FullHttpRequest request) {
-            if (route.isGzip()) context.pipeline().addLast(new HttpContentCompressor())
-                    .addLast(new WebSocketServerCompressionHandler());
-            context.channel().pipeline().addLast(new EngineIoHandler(engineIoServer, null,
-                    "ws://maid.neko-craft.com", 1024 * 1024 * 5) {
-                @Override
-                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-                    if (debug) cause.printStackTrace();
-                }
-            });
+        protected void channelRead0(ChannelHandlerContext context, FullHttpRequest request) throws Exception {
+            for (HttpRouteHandler handler : httpRouteHandlers) {
+                if (handler.handle(context, request)) return;
+            }
+            context.fireChannelRead(ReferenceCountUtil.retain(request));
         }
 
         @Override
-        public boolean needReFire() { return true; }
+        public void exceptionCaught(ChannelHandlerContext context, Throwable cause) {
+            if (debug) cause.printStackTrace();
+            context.close();
+        }
     }
 }

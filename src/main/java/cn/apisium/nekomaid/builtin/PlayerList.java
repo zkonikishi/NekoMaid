@@ -2,7 +2,6 @@ package cn.apisium.nekomaid.builtin;
 
 import cn.apisium.nekomaid.NekoMaid;
 import cn.apisium.nekomaid.utils.Utils;
-import org.apache.commons.lang.ObjectUtils;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 
@@ -140,8 +139,7 @@ final class PlayerList {
             String ban = null, name = p.getName();
             if (name != null) {
                 BanEntry be = banList.getBanEntry(name);
-                if (be != null) ban = (String) ObjectUtils.defaultIfNull(be.getReason(), "Banned by " +
-                        be.getTarget() + "!");
+                if (be != null) ban = be.getReason() == null ? "Banned by " + be.getTarget() + "!" : be.getReason();
             }
             PlayerData pd = new PlayerData();
             pd.online = p.isOnline();

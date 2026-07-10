@@ -2,20 +2,22 @@
 //file:noinspection GrUnresolvedAccess
 plugins {
     id 'java'
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'com.gradleup.shadow' version '9.1.0'
 }
 
 group 'cn.apisium.nekomaid'
-version '1.0-SNAPSHOT'
+version '1.0.0'
 
-sourceCompatibility = JavaVersion.VERSION_1_8
-targetCompatibility = JavaVersion.VERSION_1_8
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
 
 repositories {
     mavenCentral()
     maven {
         name = 'papermc'
-        url = 'https://papermc.io/repo/repository/maven-public/'
+        url = 'https://repo.papermc.io/repository/maven-public/'
     }
     maven {
         name = 'sonatype'
@@ -24,41 +26,54 @@ repositories {
     maven {
         name = 'jitpack'
         url = 'https://www.jitpack.io'
+        content {
+            includeGroup 'com.github.Apisium'
+            includeGroup 'com.github.jikoo.OpenInv'
+            includeGroup 'com.github.oshi'
+            includeGroup 'com.github.MilkBowl'
+        }
     }
     maven {
         name = 'PlugMan'
         url = 'https://raw.githubusercontent.com/TheBlackEntity/PlugMan/repository/'
-    }
-    maven {
-        name = 'ServerUtils'
-        url = 'https://repo.fvdh.dev/releases'
+        content {
+            includeGroup 'com.rylinaux'
+        }
     }
     maven {
         name = 'placeholderapi'
         url = 'https://repo.extendedclip.com/content/repositories/placeholderapi/'
+        content {
+            includeGroup 'me.clip'
+        }
     }
     maven {
         name = 'CodeMC'
         url = 'https://repo.codemc.org/repository/maven-public/'
+        content {
+            includeGroup 'de.tr7zw'
+            includeGroup 'org.spigotmc'
+        }
     }
     maven {
         name = 'onarandombox'
         url = 'https://repo.onarandombox.com/content/groups/public/'
+        content {
+            includeGroup 'com.onarandombox.multiversecore'
+        }
     }
 }
 
 dependencies {
     //noinspection VulnerableLibrariesLocal
-    compileOnly 'com.destroystokyo.paper:paper-api:1.16.5-R0.1-SNAPSHOT'
+    compileOnly 'io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT'
     compileOnly 'org.jetbrains:annotations:23.0.0'
     compileOnly 'io.netty:netty-all:4.1.85.Final'
     compileOnly 'org.apache.logging.log4j:log4j-core:2.19.0'
-    compileOnly 'com.github.Apisium:Uniporter:1.3.4-SNAPSHOT'
     compileOnly 'com.github.jikoo.OpenInv:openinvapi:2f36a4d4dc'
-    compileOnly 'me.clip:placeholderapi:2.11.2'
+    compileOnly 'me.clip:placeholderapi:2.11.6'
     compileOnly 'de.tr7zw:item-nbt-api-plugin:2.8.0'
     compileOnly 'com.rylinaux:PlugMan:2.2.9'
-    compileOnly("net.frankheijden.serverutils:ServerUtils:3.5.3")
     compileOnly 'com.github.oshi:oshi-core:6.3.1'
     compileOnly 'com.onarandombox.multiversecore:Multiverse-Core:4.3.2-SNAPSHOT'
     compileOnly ('com.github.MilkBowl:VaultAPI:1.7') {
@@ -112,5 +127,11 @@ shadowJar {
 
     archiveClassifier.set('')
     minimize()
+}
+
+processResources {
+    from('dist') {
+        into 'webui'
+    }
 }
 build.dependsOn(shadowJar)

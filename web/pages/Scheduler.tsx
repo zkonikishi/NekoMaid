@@ -3,9 +3,8 @@ import { action } from '../toast'
 import { usePlugin } from '../Context'
 import { cardActionStyles } from '../theme'
 import Empty from '../components/Empty'
-import Cron from 'material-ui-cron'
 import dialog from '../dialog'
-import { lang, currentLanguage } from '../../languages'
+import { lang } from '../../languages'
 
 import Box from '@mui/material/Box'
 import Toolbar from '@mui/material/Toolbar'
@@ -31,6 +30,11 @@ import Add from '@mui/icons-material/Add'
 import Save from '@mui/icons-material/Save'
 
 interface Task { name: string, cron: string, values: string[], enabled: boolean, whenIdle: boolean }
+const validateCron = (value: string) => {
+  const fields = value.trim().split(/\s+/)
+  return fields.length === 5 || fields.length === 6 ? '' : 'Cron must contain 5 or 6 fields.'
+}
+
 const Scheduler: React.FC = () => {
   const plugin = usePlugin()
   const [id, setId] = useState(-1)
@@ -166,13 +170,18 @@ const Scheduler: React.FC = () => {
             {tasks[id] && <>
               <Divider textAlign='left'>{lang.scheduler.timer}</Divider>
               <CardContent>
-                <Box sx={{
-                  '& .MuiTextField-root': { backgroundColor: 'inherit!important' },
-                  '& .MuiOutlinedInput-input': { color: 'inherit!important' },
-                  '& .MuiTypography-h6': { color: theme => theme.palette.primary.main + '!important' }
-                }}>
-                  <Cron cron={cron} setCron={setCron} setCronError={setCronError} locale={currentLanguage as any} isAdmin />
-                </Box>
+                <TextField
+                  fullWidth
+                  label='Cron'
+                  value={cron}
+                  error={!!cronError}
+                  helperText={cronError || 'Example: */5 * * * *'}
+                  onChange={e => {
+                    const value = e.target.value
+                    setCron(value)
+                    setCronError(validateCron(value))
+                  }}
+                />
               </CardContent>
             </>}
           </Card>

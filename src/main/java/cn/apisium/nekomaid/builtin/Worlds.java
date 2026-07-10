@@ -2,9 +2,6 @@ package cn.apisium.nekomaid.builtin;
 
 import cn.apisium.nekomaid.NekoMaid;
 import cn.apisium.nekomaid.utils.Utils;
-import com.onarandombox.MultiverseCore.MultiverseCore;
-import com.onarandombox.MultiverseCore.api.MVWorldManager;
-import com.onarandombox.MultiverseCore.api.MultiverseWorld;
 import org.bukkit.Chunk;
 import org.bukkit.Difficulty;
 import org.bukkit.event.Event;
@@ -16,14 +13,12 @@ import org.bukkit.event.weather.ThunderChangeEvent;
 import org.bukkit.event.weather.WeatherChangeEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
-import org.bukkit.plugin.Plugin;
 
 import java.util.Arrays;
 import java.util.UUID;
 
 final class Worlds {
     private boolean hasWorldGameRuleChangeEvent, canSetViewDistance, hasSeparateViewDistance;
-    private final Plugin mv;
     private final NekoMaid main;
     private static boolean hasPaperMethod;
 
@@ -69,8 +64,6 @@ final class Worlds {
     @SuppressWarnings({"unchecked", "deprecation"})
     public Worlds(NekoMaid main) {
         this.main = main;
-        mv = main.getServer().getPluginManager().getPlugin("Multiverse-Core");
-        if (mv != null) main.GLOBAL_DATA.put("hasMultiverse", true);
         main.onConnected(main, client -> {
             client.onWithAck("worlds:fetch", this::getWorlds)
                     .onWithAck("worlds:weather", args -> {
@@ -98,13 +91,6 @@ final class Worlds {
                 Difficulty diff = Difficulty.valueOf(value);
                 main.getServer().getScheduler().runTask(main, () -> {
                     world.setDifficulty(diff);
-                    if (mv != null) try {
-                        MVWorldManager wm = ((MultiverseCore) mv).getMVWorldManager();
-                        wm.getMVWorld(world).setPropertyValue("difficulty", value);
-                        ((MultiverseCore) mv).getMVWorldManager().saveWorldsConfig();
-                    } catch (Throwable e) {
-                        e.printStackTrace();
-                    }
                     update();
                 });
             }).onWithAck("worlds:pvp", args -> {
@@ -113,13 +99,6 @@ final class Worlds {
                 boolean value = (boolean) args[1];
                 main.getServer().getScheduler().runTask(main, () -> {
                     world.setPVP(value);
-                    if (mv != null) try {
-                        MVWorldManager wm = ((MultiverseCore) mv).getMVWorldManager();
-                        wm.getMVWorld(world).setPropertyValue("pvp", String.valueOf(value));
-                        ((MultiverseCore) mv).getMVWorldManager().saveWorldsConfig();
-                    } catch (Throwable e) {
-                        e.printStackTrace();
-                    }
                     update();
                 });
             }).onWithAck("worlds:viewDistance", args -> {
@@ -132,24 +111,8 @@ final class Worlds {
             }).onWithAck("worlds:save", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null) return;
-                main.getServer().getScheduler().runTask(main, world::save);
+                main.getServer().getScheduler().runTask(main, (Runnable) world::save);
             });
-            if (mv != null) {
-                MVWorldManager wm = ((MultiverseCore) mv).getMVWorldManager();
-                client.onWithAck("worlds:set", args -> {
-                    org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
-                    if (world == null) return;
-                    main.getServer().getScheduler().runTask(main, () -> {
-                        try {
-                            wm.getMVWorld(world).setPropertyValue((String) args[1], (String) args[2]);
-                            update();
-                            wm.saveWorldsConfig();
-                        } catch (Throwable e) {
-                            e.printStackTrace();
-                        }
-                    });
-                });
-            }
         });
         Events events = new Events();
         main.getServer().getScheduler()
@@ -209,13 +172,6 @@ final class Worlds {
             w.seed = it.getSeed();
             w.rules = Arrays.stream(it.getGameRules()).map(r -> new String[] { r, it.getGameRuleValue(r) })
                     .toArray(String[][]::new);
-            if (mv != null) {
-                MultiverseWorld mw = ((MultiverseCore) mv).getMVWorldManager().getMVWorld(it);
-                w.alias = mw.getAlias();
-                w.allowFlight = mw.getAllowFlight();
-                w.autoHeal = mw.getAutoHeal();
-                w.hunger = mw.getHunger();
-            }
             return w;
         }).toArray());
     }
